@@ -1,6 +1,6 @@
-import torch
-from torch.utils.data import DataLoader
-from torch.nn import CTCLoss
+import oneflow
+from oneflow.utils.data import DataLoader
+from oneflow.nn import CTCLoss
 from tqdm import tqdm
 
 from dataset import Synth90kDataset, synth90k_collate_fn
@@ -8,7 +8,7 @@ from model import CRNN
 from ctc_decoder import ctc_decode
 from config import evaluate_config as config
 
-torch.backends.cudnn.enabled = False
+oneflow.backends.cudnn.enabled = False
 
 
 def evaluate(crnn, dataloader, criterion,
@@ -23,7 +23,7 @@ def evaluate(crnn, dataloader, criterion,
     pbar_total = max_iter if max_iter else len(dataloader)
     pbar = tqdm(total=pbar_total, desc="Evaluate")
 
-    with torch.no_grad():
+    with oneflow.no_grad():
         for i, data in enumerate(dataloader):
             if max_iter and i >= max_iter:
                 break
@@ -32,10 +32,12 @@ def evaluate(crnn, dataloader, criterion,
             images, targets, target_lengths = [d.to(device) for d in data]
 
             logits = crnn(images)
-            log_probs = torch.nn.functional.log_softmax(logits, dim=2)
+            log_probs = oneflow.nn.functional.log_softmax(logits, dim=2)
 
             batch_size = images.size(0)
-            input_lengths = torch.LongTensor([logits.size(0)] * batch_size)
+            input_lengths = oneflow.LongTensor([logits.size(0)] * batch_size)
+
+            input_lengths=input_lengths.to(device)
 
             loss = criterion(log_probs, targets, input_lengths, target_lengths)
 
@@ -73,7 +75,7 @@ def main():
     img_height = config['img_height']
     img_width = config['img_width']
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = oneflow.device('cuda' if oneflow.cuda.is_available() else 'cpu')
     print(f'device: {device}')
 
     test_dataset = Synth90kDataset(root_dir=config['data_dir'], mode='test',
@@ -91,7 +93,14 @@ def main():
                 map_to_seq_hidden=config['map_to_seq_hidden'],
                 rnn_hidden=config['rnn_hidden'],
                 leaky_relu=config['leaky_relu'])
-    crnn.load_state_dict(torch.load(reload_checkpoint, map_location=device))
+    import torch
+    parameters = torch.load(reload_checkpoint)
+
+    for key, value in parameters.items():
+        val = value.detach().cpu().numpy()
+        parameters[key] = val
+
+    crnn.load_state_dict(parameters)
     crnn.to(device)
 
     criterion = CTCLoss(reduction='sum')
