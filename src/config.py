@@ -1,6 +1,6 @@
 
 common_config = {
-    'data_dir': '/home/chenqiaoling/OCR/crnn-pytorch/data/mnt/ramdisk/max/90kDICT32px/',
+    'data_dir': 'data/mnt/ramdisk/max/90kDICT32px/',
     'img_width': 100,
     'img_height': 32,
     'map_to_seq_hidden': 64,
@@ -28,7 +28,7 @@ train_config.update(common_config)
 evaluate_config = {
     'eval_batch_size': 512,
     'cpu_workers': 4,
-    'reload_checkpoint': '/home/chenqiaoling/OCR/crnn-pytorch/checkpoints/crnn_synth90k',
+    'reload_checkpoint': 'checkpoints/crnn_synth90k',
     'decode_method': 'beam_search',
     'beam_size': 10,
 }
