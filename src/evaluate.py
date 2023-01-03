@@ -1,4 +1,4 @@
-import oneflow
+import oneflow as torch
 from oneflow.utils.data import DataLoader
 from oneflow.nn import CTCLoss
 from tqdm import tqdm
@@ -8,12 +8,23 @@ from model import CRNN
 from ctc_decoder import ctc_decode
 from config import evaluate_config as config
 
-oneflow.backends.cudnn.enabled = False
+torch.backends.cudnn.enabled = False
 
 
 def evaluate(crnn, dataloader, criterion,
              max_iter=None, decode_method='beam_search', beam_size=10):
     crnn.eval()
+    import oneflow.nn as nn
+
+    class GraphMyLinear(nn.Graph):
+        def __init__(self):
+            super().__init__()
+            self.model = crnn
+
+        def build(self, input):
+            return self.model(input)
+
+    graph_crnn=GraphMyLinear()
 
     tot_count = 0
     tot_loss = 0
@@ -23,7 +34,7 @@ def evaluate(crnn, dataloader, criterion,
     pbar_total = max_iter if max_iter else len(dataloader)
     pbar = tqdm(total=pbar_total, desc="Evaluate")
 
-    with oneflow.no_grad():
+    with torch.no_grad():
         for i, data in enumerate(dataloader):
             if max_iter and i >= max_iter:
                 break
@@ -31,11 +42,12 @@ def evaluate(crnn, dataloader, criterion,
 
             images, targets, target_lengths = [d.to(device) for d in data]
 
-            logits = crnn(images)
-            log_probs = oneflow.nn.functional.log_softmax(logits, dim=2)
+            logits = graph_crnn(images)
+
+            log_probs = torch.nn.functional.log_softmax(logits, dim=2)
 
             batch_size = images.size(0)
-            input_lengths = oneflow.LongTensor([logits.size(0)] * batch_size)
+            input_lengths = torch.LongTensor([logits.size(0)] * batch_size)
 
             input_lengths=input_lengths.to(device)
 
@@ -75,7 +87,7 @@ def main():
     img_height = config['img_height']
     img_width = config['img_width']
 
-    device = oneflow.device('cuda' if oneflow.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'device: {device}')
 
     test_dataset = Synth90kDataset(root_dir=config['data_dir'], mode='test',
@@ -86,21 +98,16 @@ def main():
         batch_size=eval_batch_size,
         shuffle=False,
         num_workers=cpu_workers,
-        collate_fn=synth90k_collate_fn)
+        collate_fn=synth90k_collate_fn,
+        drop_last=True)
 
     num_class = len(Synth90kDataset.LABEL2CHAR) + 1
     crnn = CRNN(1, img_height, img_width, num_class,
                 map_to_seq_hidden=config['map_to_seq_hidden'],
                 rnn_hidden=config['rnn_hidden'],
                 leaky_relu=config['leaky_relu'])
-    import torch
-    parameters = torch.load(reload_checkpoint)
 
-    for key, value in parameters.items():
-        val = value.detach().cpu().numpy()
-        parameters[key] = val
-
-    crnn.load_state_dict(parameters)
+    crnn.load_state_dict(torch.load(reload_checkpoint))
     crnn.to(device)
 
     criterion = CTCLoss(reduction='sum')

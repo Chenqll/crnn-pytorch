@@ -1,10 +1,10 @@
 import os
 
 import cv2
-import oneflow
-from oneflow.utils.data import DataLoader
-import oneflow.optim as optim
-from oneflow.nn import CTCLoss
+import torch
+from torch.utils.data import DataLoader
+import torch.optim as optim
+from torch.nn import CTCLoss
 
 from dataset import Synth90kDataset, synth90k_collate_fn
 from model import CRNN
@@ -17,18 +17,18 @@ def train_batch(crnn, data, optimizer, criterion, device):
     images, targets, target_lengths = [d.to(device) for d in data]
 
     logits = crnn(images)
-    log_probs = oneflow.nn.functional.log_softmax(logits, dim=2)
+    log_probs = torch.nn.functional.log_softmax(logits, dim=2)
 
     batch_size = images.size(0)
-    input_lengths = oneflow.LongTensor([logits.size(0)] * batch_size)
-    target_lengths = oneflow.flatten(target_lengths)
+    input_lengths = torch.LongTensor([logits.size(0)] * batch_size)
+    target_lengths = torch.flatten(target_lengths)
     input_lengths=input_lengths.to(device)
 
     loss = criterion(log_probs, targets, input_lengths, target_lengths)
 
     optimizer.zero_grad()
     loss.backward()
-    oneflow.nn.utils.clip_grad_norm_(crnn.parameters(), 5) # gradient clipping with 5
+    # torch.nn.utils.clip_grad_norm_(crnn.parameters(), 5) # gradient clipping with 5
     optimizer.step()
     return loss.item()
 
@@ -49,7 +49,7 @@ def main():
     img_height = config['img_height']
     data_dir = config['data_dir']
 
-    device = oneflow.device('cuda' if oneflow.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'device: {device}')
 
     train_dataset = Synth90kDataset(root_dir=data_dir, mode='train',
@@ -60,7 +60,7 @@ def main():
     train_loader = DataLoader(
         dataset=train_dataset,
         batch_size=train_batch_size,
-        shuffle=True,
+        shuffle=False,
         num_workers=cpu_workers,
         collate_fn=synth90k_collate_fn)
     valid_loader = DataLoader(
@@ -76,7 +76,15 @@ def main():
                 rnn_hidden=config['rnn_hidden'],
                 leaky_relu=config['leaky_relu'])
     if reload_checkpoint:
-        crnn.load_state_dict(oneflow.load(reload_checkpoint, map_location=device))
+        crnn.load_state_dict(torch.load(reload_checkpoint, map_location=device))
+        # import torch
+        # parameters = torch.load(reload_checkpoint)
+
+        # for key, value in parameters.items():
+        #     val = value.detach().cpu().numpy()
+        #     parameters[key] = val
+
+        # crnn.load_state_dict(parameters)
     crnn.to(device)
 
     optimizer = optim.RMSprop(crnn.parameters(), lr=lr)
@@ -98,6 +106,9 @@ def main():
             if i % show_interval == 0:
                 print('train_batch_loss[', i, ']: ', loss / train_size)
 
+            txt = open("/home/chenqiaoling/OCR/crnn-pytorch/src/flow_loss_noCP_all.txt", "a")
+            txt.write(str(loss / train_size)+"\n")
+
             if i % valid_interval == 0:
                 evaluation = evaluate(crnn, valid_loader, criterion,
                                       decode_method=config['decode_method'],
@@ -109,7 +120,7 @@ def main():
                     loss = evaluation['loss']
                     save_model_path = os.path.join(config['checkpoints_dir'],
                                                    f'{prefix}_{i:06}_loss{loss}.pt')
-                    oneflow.save(crnn.state_dict(), save_model_path)
+                    torch.save(crnn.state_dict(), save_model_path)
                     print('save model at ', save_model_path)
 
             i += 1
