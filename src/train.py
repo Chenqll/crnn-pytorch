@@ -77,14 +77,6 @@ def main():
                 leaky_relu=config['leaky_relu'])
     if reload_checkpoint:
         crnn.load_state_dict(torch.load(reload_checkpoint, map_location=device))
-        # import torch
-        # parameters = torch.load(reload_checkpoint)
-
-        # for key, value in parameters.items():
-        #     val = value.detach().cpu().numpy()
-        #     parameters[key] = val
-
-        # crnn.load_state_dict(parameters)
     crnn.to(device)
 
     optimizer = optim.RMSprop(crnn.parameters(), lr=lr)
@@ -105,9 +97,6 @@ def main():
             tot_train_count += train_size
             if i % show_interval == 0:
                 print('train_batch_loss[', i, ']: ', loss / train_size)
-
-            txt = open("/home/chenqiaoling/OCR/crnn-pytorch/src/flow_loss_noCP_all.txt", "a")
-            txt.write(str(loss / train_size)+"\n")
 
             if i % valid_interval == 0:
                 evaluation = evaluate(crnn, valid_loader, criterion,
