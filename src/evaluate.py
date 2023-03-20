@@ -1,6 +1,6 @@
-import torch
-from torch.utils.data import DataLoader
-from torch.nn import CTCLoss
+import oneflow as torch
+from oneflow.utils.data import DataLoader
+from oneflow.nn import CTCLoss
 from tqdm import tqdm
 
 from dataset import Synth90kDataset, synth90k_collate_fn
@@ -14,6 +14,17 @@ torch.backends.cudnn.enabled = False
 def evaluate(crnn, dataloader, criterion,
              max_iter=None, decode_method='beam_search', beam_size=10):
     crnn.eval()
+    import oneflow.nn as nn
+
+    class GraphMyLinear(nn.Graph):
+        def __init__(self):
+            super().__init__()
+            self.model = crnn
+
+        def build(self, input):
+            return self.model(input)
+
+    graph_crnn=GraphMyLinear()
 
     tot_count = 0
     tot_loss = 0
@@ -31,11 +42,14 @@ def evaluate(crnn, dataloader, criterion,
 
             images, targets, target_lengths = [d.to(device) for d in data]
 
-            logits = crnn(images)
+            logits = graph_crnn(images)
+
             log_probs = torch.nn.functional.log_softmax(logits, dim=2)
 
             batch_size = images.size(0)
             input_lengths = torch.LongTensor([logits.size(0)] * batch_size)
+
+            input_lengths=input_lengths.to(device)
 
             loss = criterion(log_probs, targets, input_lengths, target_lengths)
 
@@ -84,14 +98,16 @@ def main():
         batch_size=eval_batch_size,
         shuffle=False,
         num_workers=cpu_workers,
-        collate_fn=synth90k_collate_fn)
+        collate_fn=synth90k_collate_fn,
+        drop_last=True)
 
     num_class = len(Synth90kDataset.LABEL2CHAR) + 1
     crnn = CRNN(1, img_height, img_width, num_class,
                 map_to_seq_hidden=config['map_to_seq_hidden'],
                 rnn_hidden=config['rnn_hidden'],
                 leaky_relu=config['leaky_relu'])
-    crnn.load_state_dict(torch.load(reload_checkpoint, map_location=device))
+
+    crnn.load_state_dict(torch.load(reload_checkpoint))
     crnn.to(device)
 
     criterion = CTCLoss(reduction='sum')

@@ -22,12 +22,13 @@ def train_batch(crnn, data, optimizer, criterion, device):
     batch_size = images.size(0)
     input_lengths = torch.LongTensor([logits.size(0)] * batch_size)
     target_lengths = torch.flatten(target_lengths)
+    input_lengths=input_lengths.to(device)
 
     loss = criterion(log_probs, targets, input_lengths, target_lengths)
 
     optimizer.zero_grad()
     loss.backward()
-    torch.nn.utils.clip_grad_norm_(crnn.parameters(), 5) # gradient clipping with 5
+    # torch.nn.utils.clip_grad_norm_(crnn.parameters(), 5) # gradient clipping with 5
     optimizer.step()
     return loss.item()
 
@@ -59,7 +60,7 @@ def main():
     train_loader = DataLoader(
         dataset=train_dataset,
         batch_size=train_batch_size,
-        shuffle=True,
+        shuffle=False,
         num_workers=cpu_workers,
         collate_fn=synth90k_collate_fn)
     valid_loader = DataLoader(

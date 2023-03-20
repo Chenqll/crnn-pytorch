@@ -1,8 +1,8 @@
 import os
 import glob
 
-import torch
-from torch.utils.data import Dataset
+import oneflow as torch
+from oneflow.utils.data import Dataset
 from scipy import signal
 from scipy.io import wavfile
 import cv2
